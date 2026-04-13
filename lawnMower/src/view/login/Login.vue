@@ -71,7 +71,7 @@ const onLogin = async () => {
     try {
       // 3. 发送真实请求给后端
       // 假设你的后端运行在 8080 端口，注意地址要写对
-      const res = await axios.post('http://localhost:8080/auth/login', {
+      const res = await axios.post('http://localhost:8081/auth/login', {
         username: form.username,
         password: form.password
       })

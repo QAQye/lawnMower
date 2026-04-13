@@ -11,7 +11,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
+//前端流处理器
 @Component
 public class FrontendStreamHandler extends TextWebSocketHandler {
 

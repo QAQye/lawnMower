@@ -24,20 +24,10 @@
         <template #title>首页</template>
       </el-menu-item>
 
-      <el-sub-menu index="2">
-        <template #title>
-          <el-icon><Document /></el-icon>
-          <span>功能介绍</span>
-        </template>
-        <el-menu-item-group>
-          <template #title><span>主要功能</span></template>
-          <el-menu-item index="2-1">SLAM 定位</el-menu-item>
-          <el-menu-item index="2-2">A*避障</el-menu-item>
-          <el-menu-item index="2-3">自主导航</el-menu-item>
-          <el-menu-item index="2-4">语义分割</el-menu-item>
-          <el-menu-item index="2-5">检测杂草</el-menu-item>
-        </el-menu-item-group>
-      </el-sub-menu>
+      <el-menu-item index="2">
+        <el-icon><icon-menu /></el-icon>
+        <template #title>检测杂草</template>
+      </el-menu-item>
 
       <el-menu-item index="3">
         <el-icon><Platform /></el-icon>
@@ -48,7 +38,15 @@
         <el-icon><Location /></el-icon>
         <template #title>自动除草</template>
       </el-menu-item>
-            <el-menu-item index="5">
+      <el-menu-item index="5">
+        <el-icon><Location /></el-icon>
+        <template #title>除草机列表</template>
+      </el-menu-item>
+      <el-menu-item index="6">
+        <el-icon><Location /></el-icon>
+        <template #title>任务列表</template>
+      </el-menu-item>
+      <el-menu-item index="7">
         <el-icon><QuestionFilled /></el-icon>
         <template #title>AI问答</template>
       </el-menu-item>
@@ -80,14 +78,12 @@ const toggleCollapse = () => {
 // 这里的 key 必须和上面 template 里的 index 一一对应
 const menuMap: Record<string, string> = {
   '1':   '/main/index',
-  '2-1': '/main/slam',
-  '2-2': '/main/astar',
-  '2-3': '/main/navigation',
-  '2-4': '/main/segmentation',
-  '2-5': '/main/detection',
+  '2':  '/main/detection',
   '3':   '/main/remote',
   '4':   '/main/auto',
-  '5':   '/main/ai'
+  '5':   '/main/mowerlist',
+  '6':   '/main/tasklist',
+  '7':   '/main/ai'
 }
 
 // 统一处理点击事件

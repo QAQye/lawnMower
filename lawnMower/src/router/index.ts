@@ -46,35 +46,19 @@ const router = createRouter({
         },
         {
           // 注意：子路由的 path 前面不要加斜杠 "/"
-          path: 'slam', 
-          name: 'slam',
-          component: () => import('../view/main/Slam.vue'),
+          path: 'mowerlist', 
+          name: 'mowerlist',
+          component: () => import('../view/main/MowerList.vue'),
           // 子路由通常也继承父级的权限，但最好显式声明一下或者在守卫里做父级检查
-          meta: { requiresAuth: true,title:"功能介绍-Slam"  } 
+          meta: { requiresAuth: true,title:"除草机列表"  } 
         },
         {
           // 注意：子路由的 path 前面不要加斜杠 "/"
-          path: 'astar', 
-          name: 'astar',
-          component: () => import('../view/main/Astar.vue'),
+          path: 'tasklist', 
+          name: 'tasklist',
+          component: () => import('../view/main/TaskList.vue'),
           // 子路由通常也继承父级的权限，但最好显式声明一下或者在守卫里做父级检查
-          meta: { requiresAuth: true,title:"功能介绍-A*"  } 
-        },
-        {
-          // 注意：子路由的 path 前面不要加斜杠 "/"
-          path: 'navigation', 
-          name: 'navigation',
-          component: () => import('../view/main/Navigation.vue'),
-          // 子路由通常也继承父级的权限，但最好显式声明一下或者在守卫里做父级检查
-          meta: { requiresAuth: true,title:"功能介绍-导航" } 
-        },
-        {
-          // 注意：子路由的 path 前面不要加斜杠 "/"
-          path: 'segmentation', 
-          name: 'segmentation',
-          component: () => import('../view/main/Segmentation.vue'),
-          // 子路由通常也继承父级的权限，但最好显式声明一下或者在守卫里做父级检查
-          meta: { requiresAuth: true,title:"功能介绍-语义分割" } 
+          meta: { requiresAuth: true,title:"除草机列表"  } 
         },
         {
           // 注意：子路由的 path 前面不要加斜杠 "/"
@@ -84,6 +68,7 @@ const router = createRouter({
           // 子路由通常也继承父级的权限，但最好显式声明一下或者在守卫里做父级检查
           meta: { requiresAuth: true,title:"功能介绍-目标检测"  } 
         },
+
       ] 
     }
     ],

@@ -12,19 +12,29 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final FrontendStreamHandler frontendStreamHandler;
+    private final RobotControlHandler robotControlHandler;
 
-    public WebSocketConfig(FrontendStreamHandler frontendStreamHandler) {
+    public WebSocketConfig(FrontendStreamHandler frontendStreamHandler,
+                           RobotControlHandler robotControlHandler) {
         this.frontendStreamHandler = frontendStreamHandler;
+        this.robotControlHandler = robotControlHandler;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        // 原有的控制接口
-        registry.addHandler(new RobotControlHandler(), "/ws/robot")
+        // 小车控制 WebSocket 接口
+        registry.addHandler(robotControlHandler, "/ws/robot/control")
                 .setAllowedOrigins("*");
 
-        // 前端接收视频流的 WebSocket 接口
+        // 如果你前端或旧代码里还在用 /ws/robot，也一起保留，避免旧逻辑失效
+        registry.addHandler(robotControlHandler, "/ws/robot")
+                .setAllowedOrigins("*");
+
+        // 前端接收视频流的 WebSocket 接口（保留你原来的逻辑）
         registry.addHandler(frontendStreamHandler, "/ws/stream")
+                .setAllowedOrigins("*");
+
+        registry.addHandler(frontendStreamHandler, "/*")
                 .setAllowedOrigins("*");
     }
 }

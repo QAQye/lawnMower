@@ -25,6 +25,7 @@ public class SecurityConfig {
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/ai/**").authenticated() // ⭐ 关键：AI 相关接口必须登录
+                                .requestMatchers("/**").permitAll()           // 放行所有 WebSocket 握手请求
                         .anyRequest().authenticated()
                 )
 

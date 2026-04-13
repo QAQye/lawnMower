@@ -1,109 +1,84 @@
-package org.example.lawnmpwer.robot.websocket;
+package org.example.lawnmpwer.robot.websocket; // ⚠️请注意包名与你本地保持一致
 
-import org.springframework.web.socket.BinaryMessage;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.example.lawnmpwer.robot.dto.RobotRegisterMessage;
+import org.example.lawnmpwer.robot.service.RobotSessionManager;
+import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
-
-import java.io.DataInputStream;
-import java.io.OutputStream;
-import java.net.Socket;
-
+//小车控制指令处理
+@Slf4j
+@Component
+@RequiredArgsConstructor
 public class RobotControlHandler extends TextWebSocketHandler {
 
-    // 树莓派的 IP 和端口
-    private static final String ROBOT_IP = "192.168.1.11";
-    private static final int CMD_PORT = 65432;
-    private static final int VIDEO_PORT = 65433;
-
-    // 保存当前的 WebSocket 会话
-    private static WebSocketSession currentSession;
-
-    // 连接树莓派的 Socket
-    private Socket cmdSocket;
-    private Socket videoSocket;
-    private OutputStream cmdOutputStream;
-    private Thread videoThread;
-    private boolean isRunning = false;
+    private final ObjectMapper objectMapper;
+    private final RobotSessionManager robotSessionManager;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
-        System.out.println("前端已连接: " + session.getId());
-        currentSession = session;
-        connectToRobot();
+        log.info("小车 WebSocket 已连接, sessionId={}, remote={}",
+                session.getId(),
+                session.getRemoteAddress());
+
+        // 给小车回个提示，方便调试
+        session.sendMessage(new TextMessage("{\"type\":\"connected\",\"message\":\"robot websocket connected\"}"));
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
-        // 收到前端 Vue 发来的按键指令（W/A/S/D）
         String payload = message.getPayload();
-        if (cmdOutputStream != null) {
-            try {
-                cmdOutputStream.write(payload.getBytes());
-                System.out.println("Java 收到前端指令: " + payload);
-                cmdOutputStream.flush();
-            } catch (Exception e) {
-                System.err.println("发送指令失败: " + e.getMessage());
+        log.info("收到小车 WebSocket 消息, sessionId={}, payload={}", session.getId(), payload);
+
+        JsonNode root = objectMapper.readTree(payload);
+        String type = root.path("type").asText("");
+
+        // 1. 注册消息
+        if ("register".equalsIgnoreCase(type)) {
+            RobotRegisterMessage registerMessage = objectMapper.readValue(payload, RobotRegisterMessage.class);
+            String robotId = registerMessage.getRobotId();
+
+            if (robotId == null || robotId.isBlank()) {
+                log.warn("注册失败：robotId 为空, sessionId={}", session.getId());
+                session.sendMessage(new TextMessage("{\"type\":\"register_result\",\"success\":false,\"message\":\"robotId is blank\"}"));
+                return;
             }
+
+            robotSessionManager.registerRobot(robotId, session);
+
+            session.sendMessage(new TextMessage(
+                    String.format("{\"type\":\"register_result\",\"success\":true,\"robotId\":\"%s\"}", robotId)
+            ));
+            return;
         }
+
+        // 2. ACK / 状态消息，先只打日志
+        if ("ack".equalsIgnoreCase(type) || "status".equalsIgnoreCase(type)) {
+            log.info(" 收到小车ACK/状态消息: {}", payload);
+            return;
+        }
+
+        // 3. 其他未知消息
+        log.warn("未识别的小车 WebSocket 消息类型, type={}, payload={}", type, payload);
+    }
+
+    @Override
+    public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
+        log.error("小车 WebSocket 通信异常, sessionId={}", session.getId(), exception);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
-        System.out.println("前端断开连接");
-        disconnectRobot();
-    }
+        log.warn("小车 WebSocket 已断开, sessionId={}, code={}, reason={}",
+                session.getId(),
+                status.getCode(),
+                status.getReason());
 
-    private void connectToRobot() {
-        try {
-            // 连接控制端口
-            cmdSocket = new Socket(ROBOT_IP, CMD_PORT);
-            cmdOutputStream = cmdSocket.getOutputStream();
-            System.out.println("成功连接到小车控制端口");
-
-            // 连接视频端口并启动接收线程
-            videoSocket = new Socket(ROBOT_IP, VIDEO_PORT);
-            isRunning = true;
-            videoThread = new Thread(this::receiveVideoLoop);
-            videoThread.start();
-            System.out.println("成功连接到小车视频端口");
-
-        } catch (Exception e) {
-            System.err.println("连接树莓派失败: " + e.getMessage());
-        }
-    }
-
-    private void disconnectRobot() {
-        isRunning = false;
-        try {
-            if (cmdSocket != null) {
-                cmdSocket.close();
-            }
-            if (videoSocket != null) {
-                videoSocket.close();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    // 循环读取树莓派发来的视频流，并转发给前端
-    private void receiveVideoLoop() {
-        try (DataInputStream dis = new DataInputStream(videoSocket.getInputStream())) {
-            while (isRunning && currentSession != null && currentSession.isOpen()) {
-                // Python 端使用 struct.pack(">Q", len)
-                // 这里按 8 字节大端序读取长度
-
-                long length = dis.readLong();
-
-                byte[] imageBytes = new byte[(int) length];
-                dis.readFully(imageBytes);
-
-                currentSession.sendMessage(new BinaryMessage(imageBytes));
-            }
-        } catch (Exception e) {
-            System.err.println("视频传输中断: " + e.getMessage());
-        }
+        robotSessionManager.removeBySessionId(session.getId());
     }
 }

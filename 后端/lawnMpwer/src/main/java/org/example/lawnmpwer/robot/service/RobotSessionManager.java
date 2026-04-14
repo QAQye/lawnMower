@@ -44,8 +44,8 @@ public class RobotSessionManager {
             }
         }
 
-        log.info("✅ 小车注册成功, robotId={}, sessionId={}", robotId, session.getId());
-        log.info("✅ 当前在线小车: {}", robotSessionMap.keySet());
+        log.info(" 小车注册成功, robotId={}, sessionId={}", robotId, session.getId());
+        log.info(" 当前在线小车: {}", robotSessionMap.keySet());
     }
 
     /**

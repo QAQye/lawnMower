@@ -56,6 +56,7 @@
           class="camera-feed"
           playsinline
           muted
+          autoplay
           v-show="isVideoConnected"
         ></video>
 
@@ -105,24 +106,6 @@
             <span v-else>🛑 停止除草电机</span>
           </el-button>
         </div>
-
-        <div class="stream-card">
-          <h4>流信息</h4>
-          <p><strong>streamName：</strong>{{ streamInfo.streamName || '-' }}</p>
-          <p><strong>rtmpPushUrl：</strong>{{ streamInfo.rtmpPushUrl || '-' }}</p>
-          <p><strong>flvUrl：</strong>{{ streamInfo.flvUrl || '-' }}</p>
-          <p><strong>hlsUrl：</strong>{{ streamInfo.hlsUrl || '-' }}</p>
-          <p><strong>whepUrl：</strong>{{ streamInfo.whepUrl || '-' }}</p>
-        </div>
-
-        <div class="stream-card" style="margin-top: 12px;">
-          <h4>MQTT 信息</h4>
-          <p><strong>MQTT状态：</strong>{{ mqttStatusText }}</p>
-          <p><strong>MQTT地址：</strong>{{ MQTT_WS_URL }}</p>
-          <p><strong>控制主题：</strong>{{ MQTT_CONTROL_TOPIC }}</p>
-        </div>
-
-        <p class="hint">当前控制命令通过 MQTT 发送到后端，不影响视频逻辑</p>
       </div>
     </div>
 
@@ -159,30 +142,15 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
-import mqtt from 'mqtt'
 
 const route = useRoute()
 const router = useRouter()
 
 // ================= 配置区 =================
-// ⚠️ 请确保这里是正确的后端地址和端口
 const BACKEND_BASE = 'http://localhost:8081'
-
-// ================= MQTT 配置区 =================
-// 前端通过 WebSocket 连接 EMQX
-const MQTT_WS_URL = 'ws://localhost:8083/mqtt'
-
-// 前端发给后端订阅的主题
-const MQTT_CONTROL_TOPIC = 'frontend/control'
-// 🌟 新增：专门用于控制视频推流启停的主题
-const MQTT_VIDEO_TOPIC = 'frontend/control/video'
-
-// 可选：如果你的 EMQX 开了账号密码，这里填写；没开就留空
-const MQTT_USERNAME = ''
-const MQTT_PASSWORD = ''
-
-// 当前登录用户ID（后面你接登录态时可以替换）
+const WS_CONTROL_URL = 'ws://localhost:8081/ws/frontend/control'
 const CURRENT_USER_ID = 1
+const ROBOT_ID = 'robot1'
 
 // ================= 状态区 =================
 const targetIp = ref(route.query.ip || '')
@@ -191,14 +159,16 @@ const onlineMowers = ref([])
 
 const videoElement = ref(null)
 let peerConnection = null
+let currentPlayPromise = null
 
-const controlStatusText = ref('MQTT 控制未连接')
+const controlStatusText = ref('WebSocket 控制未连接')
 const videoStatusText = ref('未连接')
 
 const isVideoConnected = ref(false)
 const isError = ref(false)
 const showPlayBtn = ref(false)
 const isWeeding = ref(false)
+const isConnectingVideo = ref(false)
 
 const streamInfo = ref({
   streamName: '',
@@ -208,12 +178,11 @@ const streamInfo = ref({
   whepUrl: '',
 })
 
-// ================= MQTT 状态区 =================
-let mqttClient = null
-const mqttStatusText = ref('未连接')
+// ================= WebSocket 状态区 =================
+let controlSocket = null
+const wsStatusText = ref('未连接')
 
 // ================= 工具函数 =================
-
 const resetVideoState = () => {
   isVideoConnected.value = false
   isError.value = false
@@ -236,116 +205,109 @@ const destroyWebRTC = () => {
 
   if (videoElement.value) {
     try {
-      videoElement.value.pause()
-      videoElement.value.removeAttribute('src')
-      videoElement.value.load()
+      const video = videoElement.value
+      video.srcObject = null
+      video.pause()
+      video.removeAttribute('src')
+      video.load()
     } catch (e) {
       console.warn('清理 video 元素失败：', e)
     }
   }
 
+  currentPlayPromise = null
   resetVideoState()
 }
 
-// ================= MQTT 逻辑（新增按需启停视频指令） =================
-const connectMqtt = () => {
-  if (mqttClient && mqttClient.connected) {
-    console.log('MQTT 已连接，无需重复连接')
+// ================= WebSocket 逻辑 =================
+const connectControlWs = () => {
+  if (controlSocket && controlSocket.readyState === WebSocket.OPEN) {
     return
   }
 
-  const options = {
-    connectTimeout: 4000,
-    reconnectPeriod: 2000,
+  wsStatusText.value = '连接中...'
+  controlStatusText.value = 'WebSocket 连接中...'
+
+  controlSocket = new WebSocket(WS_CONTROL_URL)
+
+  controlSocket.onopen = () => {
+    console.log('✅ 前端控制 WebSocket 连接成功')
+    wsStatusText.value = '已连接'
+    controlStatusText.value = 'WebSocket 已连接，可发送控制命令'
   }
 
-  if (MQTT_USERNAME) {
-    options.username = MQTT_USERNAME
-  }
+  controlSocket.onmessage = (event) => {
+    console.log('📩 收到后端 WebSocket 返回消息:', event.data)
 
-  if (MQTT_PASSWORD) {
-    options.password = MQTT_PASSWORD
-  }
-
-  mqttStatusText.value = '连接中...'
-  controlStatusText.value = 'MQTT 连接中...'
-
-  mqttClient = mqtt.connect(MQTT_WS_URL, options)
-
-  mqttClient.on('connect', () => {
-    console.log('✅ 前端 MQTT 连接成功')
-    mqttStatusText.value = '已连接'
-    controlStatusText.value = 'MQTT 已连接，可发送控制命令'
-    
-    // 🌟 连上 MQTT 后，立刻通知小车开启摄像头推流
-    const msg = { action: 'start_cam' }
-    mqttClient.publish(MQTT_VIDEO_TOPIC, JSON.stringify(msg), { qos: 1 })
-    console.log('🟢 已发送启动摄像头流指令')
-  })
-
-  mqttClient.on('reconnect', () => {
-    console.log('♻️ 前端 MQTT 正在重连...')
-    mqttStatusText.value = '重连中...'
-    controlStatusText.value = 'MQTT 重连中...'
-  })
-
-  mqttClient.on('error', (err) => {
-    console.error('❌ 前端 MQTT 连接异常:', err)
-    mqttStatusText.value = '连接异常'
-    controlStatusText.value = 'MQTT 异常，控制不可用'
-  })
-
-  mqttClient.on('close', () => {
-    console.log('⚠️ 前端 MQTT 连接关闭')
-    mqttStatusText.value = '已断开'
-    controlStatusText.value = 'MQTT 已断开，控制不可用'
-  })
-}
-
-const disconnectMqtt = () => {
-  if (mqttClient) {
     try {
-      // 🌟 离开网页前，通知小车停止摄像头推流
-      if (mqttClient.connected) {
-        const msg = { action: 'stop_cam' }
-        mqttClient.publish(MQTT_VIDEO_TOPIC, JSON.stringify(msg), { qos: 1 })
-        console.log('🛑 已发送停止摄像头流指令')
+      const data = JSON.parse(event.data)
+
+      if (data.ok) {
+        if (data.command) {
+          controlStatusText.value = `已发送命令：${data.command}`
+        }
+      } else {
+        controlStatusText.value = data.msg || '控制失败'
+        ElMessage.error(data.msg || '控制失败')
       }
-      
-      // 稍微延迟断开，确保消息发出去
-      setTimeout(() => {
-        mqttClient.end(true)
-        console.log('MQTT 已主动断开')
-      }, 100)
     } catch (e) {
-      console.warn('断开 MQTT 失败：', e)
+      console.warn('后端返回的不是标准 JSON：', e)
+    }
+  }
+
+  controlSocket.onclose = () => {
+    console.log('⚠️ 前端控制 WebSocket 已断开')
+    wsStatusText.value = '已断开'
+    controlStatusText.value = 'WebSocket 已断开，控制不可用'
+  }
+
+  controlSocket.onerror = (err) => {
+    console.error('❌ 前端控制 WebSocket 异常:', err)
+    wsStatusText.value = '连接异常'
+    controlStatusText.value = 'WebSocket 异常，控制不可用'
+  }
+}
+
+const disconnectControlWs = () => {
+  if (controlSocket) {
+    try {
+      if (controlSocket.readyState === WebSocket.OPEN) {
+        controlSocket.close()
+      }
+      console.log('WebSocket 已主动断开')
+    } catch (e) {
+      console.warn('断开 WebSocket 失败：', e)
     } finally {
-      mqttClient = null
-      mqttStatusText.value = '未连接'
-      controlStatusText.value = 'MQTT 已断开'
+      controlSocket = null
+      wsStatusText.value = '未连接'
+      controlStatusText.value = 'WebSocket 已断开'
     }
   }
 }
 
-const publishControlMessage = (message) => {
-  if (!mqttClient || !mqttClient.connected) {
-    ElMessage.error('MQTT 未连接，无法发送控制命令')
-    controlStatusText.value = 'MQTT 未连接，发送失败'
-    return
+const sendWsMessage = (message, successText = '') => {
+  if (!controlSocket || controlSocket.readyState !== WebSocket.OPEN) {
+    ElMessage.error('WebSocket 未连接，无法发送控制命令')
+    controlStatusText.value = 'WebSocket 未连接，发送失败'
+    return false
   }
 
-  const payload = JSON.stringify(message)
+  try {
+    const payload = JSON.stringify(message)
+    controlSocket.send(payload)
+    console.log('✅ WebSocket 消息发送成功:', payload)
 
-  mqttClient.publish(MQTT_CONTROL_TOPIC, payload, { qos: 1 }, (err) => {
-    if (err) {
-      console.error('❌ MQTT 消息发送失败:', err)
-      ElMessage.error('控制命令发送失败')
-      controlStatusText.value = '控制命令发送失败'
-    } else {
-      console.log('✅ MQTT 消息发送成功:', MQTT_CONTROL_TOPIC, payload)
-      controlStatusText.value = `已发送命令：${message.command}`
+    if (successText) {
+      controlStatusText.value = successText
     }
-  })
+
+    return true
+  } catch (err) {
+    console.error('❌ WebSocket 消息发送失败:', err)
+    ElMessage.error('控制命令发送失败')
+    controlStatusText.value = '控制命令发送失败'
+    return false
+  }
 }
 
 const buildCommandMessage = (cmd) => {
@@ -355,11 +317,13 @@ const buildCommandMessage = (cmd) => {
     type = 'camera'
   } else if (['c', 'v'].includes(cmd)) {
     type = 'weed'
+  } else if (['start_cam', 'stop_cam'].includes(cmd)) {
+    type = 'video'
   }
 
   return {
     userId: CURRENT_USER_ID,
-    robotId: 'robot1',  // ✅ 固定发送给物理小车 ID
+    robotId: ROBOT_ID,
     targetIp: targetIp.value || '',
     type,
     command: cmd,
@@ -393,6 +357,7 @@ const handleSelectMower = async (mower) => {
     query: { ...route.query, ip: mower.ipAddress }
   })
 
+  sendVideoControl('start_cam')
   await reconnectVideo()
 }
 
@@ -401,8 +366,8 @@ const loadStreamInfo = async () => {
   try {
     const res = await axios.get(`${BACKEND_BASE}/api/robot/stream-url`, {
       params: {
-        robotId: 'robot1', 
-        type: 'cam'        // 请求摄像头流
+        robotId: ROBOT_ID,
+        type: 'cam'
       }
     })
 
@@ -427,9 +392,11 @@ const loadStreamInfo = async () => {
 const forcePlayVideo = async () => {
   if (!videoElement.value) return
   showPlayBtn.value = false
+
   try {
     await videoElement.value.play()
     console.log('✅ 视频已手动触发播放')
+    videoStatusText.value = '视频播放中'
   } catch (error) {
     console.error('❌ 手动播放失败：', error)
     videoStatusText.value = '浏览器阻止了播放，请检查权限'
@@ -450,7 +417,6 @@ const initWebRTC = async () => {
     return
   }
 
-  destroyWebRTC()
   videoStatusText.value = '正在建立 WebRTC 连接...'
   isError.value = false
 
@@ -458,35 +424,48 @@ const initWebRTC = async () => {
     const rtcConfig = {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     }
-    peerConnection = new RTCPeerConnection(rtcConfig)
 
+    peerConnection = new RTCPeerConnection(rtcConfig)
     peerConnection.addTransceiver('video', { direction: 'recvonly' })
 
-    peerConnection.ontrack = (event) => {
+    peerConnection.ontrack = async (event) => {
       console.log('📡 触发 ontrack 事件，接收到媒体轨道：', event.track.kind)
       if (event.track.kind !== 'video') return
 
       const remoteStream = event.streams?.[0]
-      if (!remoteStream) return
+      if (!remoteStream || !videoElement.value) return
 
-      videoElement.value.srcObject = remoteStream
+      const video = videoElement.value
+      video.srcObject = remoteStream
+
       isVideoConnected.value = true
       videoStatusText.value = '视频已连接，正在缓冲...'
 
-      videoElement.value.play().then(() => {
+      try {
+        currentPlayPromise = video.play()
+        await currentPlayPromise
         console.log('✅ 视频自动播放成功')
         videoStatusText.value = '视频播放中'
-      }).catch((e) => {
-        console.warn('⚠️ 自动播放被浏览器拦截:', e)
+        showPlayBtn.value = false
+      } catch (e) {
+        console.warn('⚠️ 自动播放失败:', e)
+
+        if (e?.name === 'AbortError') {
+          console.warn('play() 被中断，忽略这次报错')
+          return
+        }
+
         videoStatusText.value = '视频准备就绪，请点击画面播放'
-        showPlayBtn.value = true 
-      })
+        showPlayBtn.value = true
+      } finally {
+        currentPlayPromise = null
+      }
     }
 
     peerConnection.oniceconnectionstatechange = () => {
       const state = peerConnection?.iceConnectionState
       console.log('🧊 ICE 状态变更为：', state)
-      
+
       if (state === 'failed' || state === 'disconnected' || state === 'closed') {
         videoStatusText.value = `连接断开 (ICE: ${state})`
         isError.value = true
@@ -496,9 +475,9 @@ const initWebRTC = async () => {
     peerConnection.onconnectionstatechange = () => {
       const state = peerConnection?.connectionState
       console.log('🔗 PeerConnection 状态变更为：', state)
-      
+
       if (state === 'failed') {
-        videoStatusText.value = `推流端可能已断开`
+        videoStatusText.value = '推流端可能已断开'
         isError.value = true
       }
     }
@@ -534,60 +513,68 @@ const initWebRTC = async () => {
 
 // ================= 重连视频 =================
 const reconnectVideo = async () => {
-  destroyWebRTC()
-  await loadStreamInfo()
-  await nextTick()
-  await initWebRTC()
+  if (isConnectingVideo.value) {
+    console.log('视频正在连接中，跳过重复请求')
+    return
+  }
+
+  isConnectingVideo.value = true
+  try {
+    destroyWebRTC()
+    await loadStreamInfo()
+    await nextTick()
+    await initWebRTC()
+  } finally {
+    isConnectingVideo.value = false
+  }
 }
 
 // ================= 控制发送逻辑 =================
 const sendCommand = (cmd) => {
   const message = buildCommandMessage(cmd)
-  publishControlMessage(message)
+  sendWsMessage(message, `已发送命令：${cmd}`)
 }
 
 const toggleWeeding = () => {
   const nextCommand = isWeeding.value ? 'v' : 'c'
   const message = buildCommandMessage(nextCommand)
 
-  if (!mqttClient || !mqttClient.connected) {
-    ElMessage.error('MQTT 未连接，无法发送除草控制命令')
-    return
-  }
+  const ok = sendWsMessage(
+    message,
+    isWeeding.value ? '已发送除草停止命令' : '已发送除草开启命令'
+  )
 
-  mqttClient.publish(MQTT_CONTROL_TOPIC, JSON.stringify(message), { qos: 1 }, (err) => {
-    if (err) {
-      console.error('❌ 除草命令发送失败:', err)
-      ElMessage.error('除草控制命令发送失败')
-      controlStatusText.value = '除草控制发送失败'
-    } else {
-      isWeeding.value = !isWeeding.value
-      ElMessage.success(isWeeding.value ? '已发送开启除草命令' : '已发送停止除草命令')
-      controlStatusText.value = isWeeding.value ? '已发送除草开启命令' : '已发送除草停止命令'
-      console.log('✅ 除草 MQTT 消息发送成功:', MQTT_CONTROL_TOPIC, message)
-    }
-  })
+  if (ok) {
+    isWeeding.value = !isWeeding.value
+    ElMessage.success(isWeeding.value ? '已发送开启除草命令' : '已发送停止除草命令')
+  }
+}
+
+const sendVideoControl = (action) => {
+  const message = buildCommandMessage(action)
+  sendWsMessage(message)
 }
 
 // ================= 生命周期 =================
 onMounted(async () => {
-  connectMqtt()
+  connectControlWs()
 
   if (!targetIp.value) {
     await loadOnlineMowers()
   } else {
+    sendVideoControl('start_cam')
     await reconnectVideo()
   }
 })
 
 onUnmounted(() => {
+  sendVideoControl('stop_cam')
   destroyWebRTC()
-  disconnectMqtt()
+  disconnectControlWs()
 })
 </script>
 
 <style scoped>
-/* =========== 基础布局样式 =========== */
 .remote-page {
   min-height: 100vh;
   background: #101418;
@@ -646,9 +633,8 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-/* =========== 视频区域样式 =========== */
 .video-box {
-  position: relative; 
+  position: relative;
   min-height: 600px;
   background: #000;
   border-radius: 18px;
@@ -714,7 +700,6 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
-/* =========== 虚拟摇杆与右侧控制样式 =========== */
 .virtual-title {
   margin-top: 8px;
   margin-bottom: 12px;

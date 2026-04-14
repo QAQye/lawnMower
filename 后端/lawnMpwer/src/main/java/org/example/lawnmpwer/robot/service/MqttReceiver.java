@@ -1,72 +1,47 @@
 package org.example.lawnmpwer.robot.service;
-//mqtt接收服务
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.example.lawnmpwer.robot.dto.FrontendControlMessage;
-import org.example.lawnmpwer.robot.dto.RobotWsControlMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.messaging.Message;
 import org.springframework.stereotype.Component;
 
-@Slf4j
 @Component
-@RequiredArgsConstructor
 public class MqttReceiver {
 
+    private static final Logger log = LoggerFactory.getLogger(MqttReceiver.class);
+
     private final ObjectMapper objectMapper;
-    private final RobotSessionManager robotSessionManager;
+
+    public MqttReceiver(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     @ServiceActivator(inputChannel = "mqttInputChannel")
     public void receive(Message<?> message) {
+        String topic = String.valueOf(message.getHeaders().get("mqtt_receivedTopic"));
+        String payload = String.valueOf(message.getPayload());
+
         try {
-            String payload = message.getPayload().toString();
-            log.info("收到前端 MQTT 消息: {}", payload);
+            JsonNode root = objectMapper.readTree(payload);
+            String robotId = root.path("robotId").asText("");
+            String type = root.path("type").asText("");
 
-            FrontendControlMessage cmd = objectMapper.readValue(payload, FrontendControlMessage.class);
-
-            log.info("解析后: userId={}, robotId={}, type={}, command={}, targetIp={}, timestamp={}",
-                    cmd.getUserId(),
-                    cmd.getRobotId(),
-                    cmd.getType(),
-                    cmd.getCommand(),
-                    cmd.getTargetIp(),
-                    cmd.getTimestamp()
-            );
-
-            if (cmd.getRobotId() == null || cmd.getRobotId().isBlank()) {
-                log.warn("MQTT 转发失败：robotId 为空");
-                return;
-            }
-
-            if (cmd.getCommand() == null || cmd.getCommand().isBlank()) {
-                log.warn("MQTT 转发失败：command 为空");
-                return;
-            }
-
-            // 构造发给小车的 WebSocket 消息
-            RobotWsControlMessage wsMessage = new RobotWsControlMessage(
-                    "control",
-                    cmd.getRobotId(),
-                    cmd.getCommand(),
-                    cmd.getTimestamp() != null ? cmd.getTimestamp() : System.currentTimeMillis()
-            );
-
-            String wsPayload = objectMapper.writeValueAsString(wsMessage);
-
-            boolean sent = robotSessionManager.sendToRobot(cmd.getRobotId(), wsPayload);
-
-            if (sent) {
-                log.info("MQTT -> WebSocket 转发成功, robotId={}, command={}",
-                        cmd.getRobotId(), cmd.getCommand());
-            } else {
-                log.warn("MQTT -> WebSocket 转发失败, robotId={}, command={}",
-                        cmd.getRobotId(), cmd.getCommand());
-            }
-
+            log.info("收到小车 MQTT 消息: topic={}, robotId={}, type={}, payload={}", topic, robotId, type, payload);
         } catch (Exception e) {
-            log.error("处理 MQTT 消息失败", e);
+            log.info("收到小车 MQTT 原始消息: topic={}, payload={}", topic, payload);
+        }
+
+        if (topic.endsWith("/ack")) {
+            log.info("收到小车 ACK: {}", payload);
+        } else if (topic.endsWith("/status")) {
+            log.info("收到小车状态: {}", payload);
+        } else if (topic.endsWith("/online")) {
+            log.info("小车上线: {}", payload);
+        } else if (topic.endsWith("/offline")) {
+            log.info("小车离线: {}", payload);
         }
     }
 }

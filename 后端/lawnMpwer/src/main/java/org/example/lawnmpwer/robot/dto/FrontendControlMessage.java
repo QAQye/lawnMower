@@ -1,25 +1,59 @@
 package org.example.lawnmpwer.robot.dto;
-//前端控制信息接收
-import lombok.Data;
 
-@Data
 public class FrontendControlMessage {
 
-    private Long userId;
-
+    private Integer userId;
     private String robotId;
-
     private String targetIp;
-
-    /**
-     * move / camera / weed
-     */
     private String type;
-
-    /**
-     * w / a / s / d / x / 1 / 2 / 3 / 5 / c / v
-     */
     private String command;
-
     private Long timestamp;
+
+    public Integer getUserId() {
+        return userId;
+    }
+
+    public void setUserId(Integer userId) {
+        this.userId = userId;
+    }
+
+    public String getRobotId() {
+        return robotId;
+    }
+
+    public void setRobotId(String robotId) {
+        this.robotId = robotId;
+    }
+
+    public String getTargetIp() {
+        return targetIp;
+    }
+
+    public void setTargetIp(String targetIp) {
+        this.targetIp = targetIp;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+
+    public String getCommand() {
+        return command;
+    }
+
+    public void setCommand(String command) {
+        this.command = command;
+    }
+
+    public Long getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(Long timestamp) {
+        this.timestamp = timestamp;
+    }
 }

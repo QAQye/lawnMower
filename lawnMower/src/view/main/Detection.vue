@@ -6,7 +6,7 @@
         <span :class="['status-dot', isConnected ? 'online' : 'offline']"></span>
         <span class="status-text">{{ statusText }}</span>
       </div>
-      
+
       <div class="video-box">
         <video
           v-show="isVideoVisible"
@@ -32,7 +32,7 @@
       <div class="section-header">
         <h3>实时作业统计</h3>
       </div>
-      
+
       <div class="stats-box">
         <div class="stat-card crop-card">
           <div class="card-icon">🌾</div>
@@ -58,16 +58,16 @@
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import axios from 'axios'
 
-import mqtt from 'mqtt'
 // ================= 配置区 =================
-// 改成你的 Spring Boot 后端地址
 const BACKEND_BASE = 'http://localhost:8081'
+const WS_CONTROL_URL = 'ws://localhost:8081/ws/frontend/control'
 
-// 你这页默认查看哪一路流 / 哪台车
 const ROBOT_ID = 'robot1'
+const CURRENT_USER_ID = 1
 
-// 统计轮询间隔
 const STATS_POLL_INTERVAL = 1000
+const AI_STREAM_BOOT_DELAY = 1200
+const WS_OPEN_TIMEOUT = 3000
 
 // ================= 响应式状态 =================
 const videoElement = ref<HTMLVideoElement | null>(null)
@@ -81,11 +81,6 @@ const weedCount = ref<number>(0)
 const isVideoVisible = ref<boolean>(false)
 const showPlayOverlay = ref<boolean>(false)
 
-// ================= MQTT 配置区 =================
-const MQTT_WS_URL = 'ws://localhost:8083/mqtt'  // 替换成你的 EMQX 地址
-const MQTT_VIDEO_TOPIC = 'frontend/control/video' // 专门用来控制视频流的 topic
-let mqttClient: mqtt.MqttClient | null = null
-
 const streamInfo = ref({
   streamName: '',
   rtmpPushUrl: '',
@@ -96,21 +91,23 @@ const streamInfo = ref({
 
 let peerConnection: RTCPeerConnection | null = null
 let statsTimer: number | null = null
+let controlSocket: WebSocket | null = null
+let hasSentStartAi = false
 
-// ================= 获取流地址 =================
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
 // ================= 获取流地址 =================
 const loadStreamInfo = async () => {
   try {
     const res = await axios.get(`${BACKEND_BASE}/api/robot/stream-url`, {
       params: {
-        robotId: ROBOT_ID,  // 告诉后端是哪台车
-        type: 'ai'          // 告诉后端：我要看带有目标检测框的 AI 流！
+        robotId: ROBOT_ID,
+        type: 'ai'
       }
     })
 
-    // 这里的赋值逻辑非常清爽，因为后端已经把完整的 "_ai" 地址全拼好了返回给你
     streamInfo.value = {
-      streamName: res.data?.streamName || '', 
+      streamName: res.data?.streamName || '',
       rtmpPushUrl: res.data?.rtmpPushUrl || '',
       flvUrl: res.data?.flvUrl || '',
       hlsUrl: res.data?.hlsUrl || '',
@@ -124,6 +121,103 @@ const loadStreamInfo = async () => {
     isConnected.value = false
     throw error
   }
+}
+
+// ================= 控制 WebSocket =================
+const connectControlWs = (): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if (controlSocket && controlSocket.readyState === WebSocket.OPEN) {
+      resolve()
+      return
+    }
+
+    if (controlSocket && controlSocket.readyState === WebSocket.CONNECTING) {
+      const start = Date.now()
+      const timer = window.setInterval(() => {
+        if (controlSocket?.readyState === WebSocket.OPEN) {
+          clearInterval(timer)
+          resolve()
+          return
+        }
+
+        if (Date.now() - start > WS_OPEN_TIMEOUT) {
+          clearInterval(timer)
+          reject(new Error('Detection 控制 WebSocket 连接超时'))
+        }
+      }, 100)
+      return
+    }
+
+    controlSocket = new WebSocket(WS_CONTROL_URL)
+
+    const timeoutTimer = window.setTimeout(() => {
+      reject(new Error('Detection 控制 WebSocket 打开超时'))
+    }, WS_OPEN_TIMEOUT)
+
+    controlSocket.onopen = () => {
+      window.clearTimeout(timeoutTimer)
+      console.log('✅ Detection 页面控制 WebSocket 已连接')
+      resolve()
+    }
+
+    controlSocket.onmessage = (event) => {
+      console.log('📩 Detection 收到后端回执:', event.data)
+    }
+
+    controlSocket.onerror = (err) => {
+      window.clearTimeout(timeoutTimer)
+      console.error('❌ Detection 控制 WebSocket 异常:', err)
+      reject(new Error('Detection 控制 WebSocket 连接失败'))
+    }
+
+    controlSocket.onclose = () => {
+      console.log('⚠️ Detection 控制 WebSocket 已断开')
+      controlSocket = null
+    }
+  })
+}
+
+const disconnectControlWs = () => {
+  if (!controlSocket) return
+
+  try {
+    controlSocket.close()
+  } catch (e) {
+    console.warn('关闭 Detection WebSocket 失败:', e)
+  } finally {
+    controlSocket = null
+  }
+}
+
+const sendWsMessage = (message: any) => {
+  if (!controlSocket || controlSocket.readyState !== WebSocket.OPEN) {
+    console.warn('WebSocket 未连接，无法发送 Detection 控制命令')
+    return false
+  }
+
+  try {
+    controlSocket.send(JSON.stringify(message))
+    return true
+  } catch (e) {
+    console.error('Detection 控制消息发送失败:', e)
+    return false
+  }
+}
+
+const buildAiControlMessage = (cmd: 'start_ai' | 'stop_ai') => {
+  return {
+    userId: CURRENT_USER_ID,
+    robotId: ROBOT_ID,
+    targetIp: '',
+    type: 'video',
+    command: cmd,
+    timestamp: Date.now(),
+  }
+}
+
+const sendAiVideoControl = (cmd: 'start_ai' | 'stop_ai') => {
+  const message = buildAiControlMessage(cmd)
+  return sendWsMessage(message)
 }
 
 // ================= 销毁 WebRTC =================
@@ -177,7 +271,6 @@ const initWebRTC = async () => {
     }
 
     peerConnection = new RTCPeerConnection(rtcConfig)
-
     peerConnection.addTransceiver('video', { direction: 'recvonly' })
 
     peerConnection.ontrack = async (event) => {
@@ -307,69 +400,64 @@ const stopStatsPolling = () => {
   }
 }
 
-// ================= 按需推流控制 =================
-const startOnDemandStream = () => {
-  mqttClient = mqtt.connect(MQTT_WS_URL)
-  
-  mqttClient.on('connect', () => {
-    console.log('✅ MQTT 已连接，通知小车启动 AI 视频流...')
-    const msg = { action: 'start_ai' }
-    mqttClient?.publish(MQTT_VIDEO_TOPIC, JSON.stringify(msg), { qos: 1 })
-  })
-}
-
-const stopOnDemandStream = () => {
-  if (mqttClient && mqttClient.connected) {
-    console.log('🛑 离开页面，通知小车关闭 AI 视频流...')
-    const msg = { action: 'stop_ai' }
-    mqttClient.publish(MQTT_VIDEO_TOPIC, JSON.stringify(msg), { qos: 1 })
-    
-    // 稍微延迟断开连接，确保消息发出去
-    setTimeout(() => {
-      mqttClient?.end()
-    }, 500)
-  }
-}
-
 // ================= 页面生命周期 =================
 onMounted(async () => {
   try {
-    startOnDemandStream() // 👈 进页面第一件事：通知小车开机
+    await connectControlWs()
+
+    const ok = sendAiVideoControl('start_ai')
+    if (ok) {
+      hasSentStartAi = true
+      console.log('🚀 已通知后端转发 start_ai，等待小车启动 AI 推流...')
+    }
+
+    await sleep(AI_STREAM_BOOT_DELAY)
     await loadStreamInfo()
     await nextTick()
     await initWebRTC()
     startStatsPolling()
   } catch (error) {
-    console.error('页面初始化失败:', error)
+    console.error('Detection 页面初始化失败:', error)
+    statusText.value = '页面初始化失败'
   }
 })
 
 onBeforeUnmount(() => {
   stopStatsPolling()
-  destroyWebRTC()
-  stopOnDemandStream() // 👈 离开页面：通知小车停机休息
-})
 
+  if (hasSentStartAi) {
+    sendAiVideoControl('stop_ai')
+    hasSentStartAi = false
+  }
+
+  destroyWebRTC()
+
+  setTimeout(() => {
+    disconnectControlWs()
+  }, 150)
+})
 </script>
 
 <style scoped>
-/* 视频区域样式不变 */
 .detection-container {
   display: flex;
   gap: 20px;
   height: calc(100vh - 120px);
   min-height: 500px;
 }
+
 .section-header {
   display: flex;
   align-items: center;
   margin-bottom: 15px;
 }
+
 .section-header h3 {
   margin: 0;
   margin-right: 15px;
   color: #303133;
 }
+
 .video-section {
   flex: 7;
   display: flex;
@@ -379,6 +467,7 @@ onBeforeUnmount(() => {
   padding: 20px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
 }
+
 .video-box {
   flex: 1;
   background-color: #1e1e1e;
@@ -389,35 +478,40 @@ onBeforeUnmount(() => {
   overflow: hidden;
   position: relative;
 }
+
 .live-video {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
+
 .placeholder {
   color: #909399;
   font-size: 16px;
   letter-spacing: 2px;
 }
+
 .status-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   margin-right: 8px;
 }
+
 .status-dot.online {
   background-color: #67c23a;
   box-shadow: 0 0 5px #67c23a;
 }
+
 .status-dot.offline {
   background-color: #f56c6c;
 }
+
 .status-text {
   font-size: 14px;
   color: #606266;
 }
 
-/* 保持界面风格，只补一个播放覆盖层 */
 .play-overlay {
   position: absolute;
   inset: 0;
@@ -429,6 +523,7 @@ onBeforeUnmount(() => {
   color: #fff;
   cursor: pointer;
 }
+
 .play-button {
   width: 72px;
   height: 72px;
@@ -441,7 +536,6 @@ onBeforeUnmount(() => {
   margin-bottom: 10px;
 }
 
-/* 统计看板样式保持 */
 .stats-section {
   flex: 3;
   display: flex;
@@ -451,45 +545,54 @@ onBeforeUnmount(() => {
   padding: 20px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.05);
 }
+
 .stats-box {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 20px;
 }
+
 .stat-card {
   display: flex;
   align-items: center;
   padding: 20px;
   border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   transition: transform 0.2s;
 }
+
 .stat-card:hover {
   transform: translateY(-2px);
 }
+
 .crop-card {
   background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
   border-left: 6px solid #67c23a;
 }
+
 .weed-card {
   background: linear-gradient(135deg, #fff1eb 0%, #ace0f9 100%);
   border-left: 6px solid #f56c6c;
 }
+
 .card-icon {
   font-size: 40px;
   margin-right: 20px;
 }
+
 .card-content {
   display: flex;
   flex-direction: column;
 }
+
 .card-title {
   font-size: 14px;
   color: #606266;
   margin-bottom: 5px;
   font-weight: bold;
 }
+
 .card-number {
   font-size: 36px;
   font-weight: 900;

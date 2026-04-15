@@ -47,7 +47,6 @@ public class FrontendControlHandler extends TextWebSocketHandler {
                 sendError(session, "robotId 不能为空");
                 return;
             }
-
             if (cmd.getCommand() == null || cmd.getCommand().isBlank()) {
                 sendError(session, "command 不能为空");
                 return;
@@ -94,12 +93,10 @@ public class FrontendControlHandler extends TextWebSocketHandler {
         if ("start_cam".equals(command) || "stop_cam".equals(command)) {
             return "robot/" + robotId + "/video/control";
         }
-
-        // 杂草检测 AI 视频
+        // 杂草检测视频
         if ("start_ai".equals(command) || "stop_ai".equals(command)) {
             return "robot/" + robotId + "/ai/control";
         }
-
         // 其余命令仍走底盘/云台/除草控制总线
         return "robot/" + robotId + "/control";
     }

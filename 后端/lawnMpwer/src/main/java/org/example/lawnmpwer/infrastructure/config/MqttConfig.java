@@ -45,7 +45,6 @@ public class MqttConfig {
         factory.setConnectionOptions(options);
         return factory;
     }
-
     @Bean
     public MessageChannel mqttInputChannel() {
         return new DirectChannel();
@@ -62,7 +61,8 @@ public class MqttConfig {
                         "robot/+/ack",
                         "robot/+/status",
                         "robot/+/online",
-                        "robot/+/offline"
+                        "robot/+/offline",
+                        "robot/+/detection/stats"
                 );
 
         adapter.setCompletionTimeout(5000);

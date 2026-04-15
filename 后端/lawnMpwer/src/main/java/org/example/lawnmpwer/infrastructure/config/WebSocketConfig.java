@@ -1,8 +1,7 @@
 package org.example.lawnmpwer.infrastructure.config;
 
+import org.example.lawnmpwer.mower.websocket.MowerStatusWebSocketHandler;
 import org.example.lawnmpwer.robot.websocket.FrontendControlHandler;
-import org.example.lawnmpwer.robot.websocket.FrontendStreamHandler;
-import org.example.lawnmpwer.robot.websocket.RobotControlHandler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -12,16 +11,13 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
 
-    private final RobotControlHandler robotControlHandler;
-    private final FrontendStreamHandler frontendStreamHandler;
     private final FrontendControlHandler frontendControlHandler;
+    private final MowerStatusWebSocketHandler mowerStatusWebSocketHandler;
 
-    public WebSocketConfig(RobotControlHandler robotControlHandler,
-                           FrontendStreamHandler frontendStreamHandler,
-                           FrontendControlHandler frontendControlHandler) {
-        this.robotControlHandler = robotControlHandler;
-        this.frontendStreamHandler = frontendStreamHandler;
+    public WebSocketConfig(FrontendControlHandler frontendControlHandler,
+                           MowerStatusWebSocketHandler mowerStatusWebSocketHandler) {
         this.frontendControlHandler = frontendControlHandler;
+        this.mowerStatusWebSocketHandler = mowerStatusWebSocketHandler;
     }
 
     @Override
@@ -29,11 +25,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
         registry.addHandler(frontendControlHandler, "/ws/frontend/control")
                 .setAllowedOriginPatterns("*");
 
-        registry.addHandler(frontendStreamHandler, "/ws/frontend/stream")
-                .setAllowedOriginPatterns("*");
-
-        // 兼容旧链路，过渡期先保留
-        registry.addHandler(robotControlHandler, "/ws/robot/control")
+        registry.addHandler(mowerStatusWebSocketHandler, "/ws/mower/status")
                 .setAllowedOriginPatterns("*");
     }
 }

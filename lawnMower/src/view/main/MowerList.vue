@@ -59,37 +59,37 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { ElMessage } from 'element-plus';
-import axios from 'axios'; // 确保你的项目中安装了 axios
+import axios from 'axios';
 import { useRouter } from 'vue-router';
+
 const router = useRouter();
+const token = localStorage.getItem('token');
 
-// 假设你登录成功后，把 token 存到了 localStorage 里
-const token = localStorage.getItem('token'); 
-
-// 给 Axios 加上请求拦截器
+// axios 请求头
 axios.interceptors.request.use(
   config => {
-    // 每次发请求前，如果发现有 token，就自动塞到请求头里
     if (token) {
-      config.headers['Authorization'] = `Bearer ${token}`; 
+      config.headers['Authorization'] = `Bearer ${token}`;
     }
     return config;
   },
-  error => {
-    return Promise.reject(error);
-  }
+  error => Promise.reject(error)
 );
 
 // 基础配置
-const baseUrl = 'http://localhost:8081/api/mower'; // 根据你的后端端口调整
+const baseUrl = 'http://localhost:8081/api/mower';
 const loading = ref(false);
 const tableData = ref([]);
 
-// 弹窗表单相关
+// 状态 WebSocket
+let statusSocket = null;
+let manualClose = false;
+
+// 弹窗表单
 const dialogVisible = ref(false);
-const dialogType = ref('add'); // 'add' 或 'edit'
+const dialogType = ref('add');
 const formRef = ref(null);
 const formData = ref({
   id: null,
@@ -97,7 +97,7 @@ const formData = ref({
   ipAddress: ''
 });
 
-// 表单验证规则
+// 校验规则
 const rules = {
   name: [{ required: true, message: '请输入除草机名称', trigger: 'blur' }],
   ipAddress: [
@@ -106,13 +106,12 @@ const rules = {
   ]
 };
 
-// 1. 获取列表数据 (触发后端 Ping)
+// 1. 获取列表数据
 const fetchData = async () => {
   loading.value = true;
   try {
     const res = await axios.get(`${baseUrl}/list`);
-    // 注意：根据你的后端全局返回值配置，这里可能需要 res.data.data
-    tableData.value = res.data; 
+    tableData.value = res.data;
   } catch (error) {
     ElMessage.error('获取列表失败');
   } finally {
@@ -120,22 +119,87 @@ const fetchData = async () => {
   }
 };
 
-// 2. 点击新增按钮
+// 2. 构造状态 WebSocket 地址
+const buildStatusWsUrl = () => {
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const host = window.location.hostname || 'localhost';
+  return `${protocol}://${host}:8081/ws/mower/status`;
+};
+
+// 3. 连接状态 WebSocket
+const connectStatusWs = () => {
+  if (statusSocket && statusSocket.readyState === WebSocket.OPEN) {
+    return;
+  }
+
+  manualClose = false;
+  const wsUrl = buildStatusWsUrl();
+  statusSocket = new WebSocket(wsUrl);
+
+  statusSocket.onopen = () => {
+    console.log('✅ 设备状态 WebSocket 已连接');
+  };
+
+  statusSocket.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      console.log('📩 收到设备状态推送:', msg);
+
+      if (msg.type === 'connected') {
+        return;
+      }
+
+      if (msg.type === 'mower_status') {
+        applyMowerStatus(msg);
+      }
+    } catch (e) {
+      console.error('处理设备状态消息失败:', e);
+    }
+  };
+
+  statusSocket.onerror = (err) => {
+    console.error('❌ 设备状态 WebSocket 异常:', err);
+  };
+
+  statusSocket.onclose = () => {
+    console.warn('⚠️ 设备状态 WebSocket 已断开');
+
+    if (!manualClose) {
+      setTimeout(() => {
+        connectStatusWs();
+      }, 3000);
+    }
+  };
+};
+
+// 4. 把后端推送的状态应用到表格
+const applyMowerStatus = (msg) => {
+  const row = tableData.value.find(item => item.ipAddress === msg.ipAddress);
+
+  if (!row) {
+    // 如果当前表格还没有这台设备，重新拉一次列表
+    fetchData();
+    return;
+  }
+
+  row.status = msg.status;
+};
+
+// 5. 新增
 const handleAdd = () => {
   dialogType.value = 'add';
   formData.value = { id: null, name: '', ipAddress: '' };
   dialogVisible.value = true;
 };
 
-// 3. 点击编辑按钮
+// 6. 编辑
 const handleEdit = (row) => {
   dialogType.value = 'edit';
-  // 深拷贝数据，防止修改时表格跟着变
-  formData.value = { ...row }; 
+  formData.value = { ...row };
   dialogVisible.value = true;
 };
 
-// 4. 提交表单 (新增或修改)
+// 7. 提交表单
 const submitForm = () => {
   formRef.value.validate(async (valid) => {
     if (valid) {
@@ -148,7 +212,7 @@ const submitForm = () => {
           ElMessage.success('修改成功');
         }
         dialogVisible.value = false;
-        fetchData(); // 刷新表格
+        fetchData();
       } catch (error) {
         ElMessage.error('操作失败');
       }
@@ -156,38 +220,45 @@ const submitForm = () => {
   });
 };
 
-// 5. 删除设备
+// 8. 删除
 const handleDelete = async (id) => {
   try {
     await axios.delete(`${baseUrl}/delete/${id}`);
     ElMessage.success('删除成功');
-    fetchData(); // 刷新表格
+    fetchData();
   } catch (error) {
     ElMessage.error('删除失败');
   }
 };
 
-// 6. 去遥控跳转
-// 2. 修改 goRemote 方法
+// 9. 去遥控
 const goRemote = (row) => {
   if (row.status === 0) {
     ElMessage.error('设备已离线，无法遥控！');
     return;
   }
+
   if (row.status === 3) {
     ElMessage.warning('设备异常（车端程序未启动），可能无法遥控！');
-    // 如果你想允许异常状态下强制跳转，可以不加 return
-    return; 
+    return;
   }
-  
+
   ElMessage.success(`正在连接到 ${row.name}...`);
-  // 跳转到 Remote 页面，并将 IP 附加在 URL 参数里
   router.push({ path: '/main/remote', query: { ip: row.ipAddress } });
 };
 
-// 组件挂载时自动拉取数据
+// 生命周期
 onMounted(() => {
   fetchData();
+  connectStatusWs();
+});
+
+onBeforeUnmount(() => {
+  manualClose = true;
+  if (statusSocket) {
+    statusSocket.close();
+    statusSocket = null;
+  }
 });
 </script>
 

@@ -372,11 +372,11 @@ const fetchStats = async () => {
       }
     })
 
-    const data = res.data?.data
-    if (data) {
-      cropCount.value = Number(data.cropCount || 0)
-      weedCount.value = Number(data.weedCount || 0)
-    }
+    const data = res.data
+    cropCount.value = Number(data?.cropCount ?? 0)
+    weedCount.value = Number(data?.weedCount ?? 0)
+
+    console.log('✅ 最新统计数据:', data)
   } catch (error) {
     console.error('❌ 获取统计失败:', error)
   }

@@ -22,30 +22,30 @@
         <h4 class="virtual-title">小车移动虚拟摇杆</h4>
         <div class="control-pad">
           <div class="pad-row">
-            <el-button type="primary" circle size="large" @click="sendCommand('w')">⬆️</el-button>
+            <el-button type="primary" circle size="large" @click="sendCommand('w')">⬆</el-button>
           </div>
           <div class="pad-row">
-            <el-button type="primary" circle size="large" @click="sendCommand('a')">⬅️</el-button>
+            <el-button type="primary" circle size="large" @click="sendCommand('a')">⬅</el-button>
             <el-button type="danger" circle size="large" @click="sendCommand('x')" style="font-weight: bold;">M</el-button>
-            <el-button type="primary" circle size="large" @click="sendCommand('d')">➡️</el-button>
+            <el-button type="primary" circle size="large" @click="sendCommand('d')">➡</el-button>
           </div>
           <div class="pad-row">
-            <el-button type="primary" circle size="large" @click="sendCommand('s')">⬇️</el-button>
+            <el-button type="primary" circle size="large" @click="sendCommand('s')">⬇</el-button>
           </div>
         </div>
-
+        <el-divider border-style="dashed" style="margin: 80px 0; border-color: #444;" />
         <h4 class="virtual-title">摄像头虚拟摇杆</h4>
         <div class="control-pad">
           <div class="pad-row">
-            <el-button type="primary" circle size="large" @click="sendCommand('5')">⬆️</el-button>
+            <el-button type="primary" circle size="large" @click="sendCommand('5')">⬆</el-button>
           </div>
           <div class="pad-row">
-            <el-button type="primary" circle size="large" @click="sendCommand('1')">⬅️</el-button>
+            <el-button type="primary" circle size="large" @click="sendCommand('1')">⬅</el-button>
             <el-button type="danger" circle size="large" @click="sendCommand('x')" style="font-weight: bold;">M</el-button>
-            <el-button type="primary" circle size="large" @click="sendCommand('3')">➡️</el-button>
+            <el-button type="primary" circle size="large" @click="sendCommand('3')">➡</el-button>
           </div>
           <div class="pad-row">
-            <el-button type="primary" circle size="large" @click="sendCommand('2')">⬇️</el-button>
+            <el-button type="primary" circle size="large" @click="sendCommand('2')">⬇</el-button>
           </div>
         </div>
       </div>
@@ -81,10 +81,11 @@
       <div class="side-panel right-panel">
         <h4>按键操作说明</h4>
         <div class="key-instructions">
-          <p><span>⬆️ / ↑</span> 前进</p>
-          <p><span>⬇️ / ↓</span> 后退</p>
-          <p><span>⬅️ / ←</span> 左转</p>
-          <p><span>➡️ / →</span> 右转</p>
+          <p><span>⬆</span> 前进</p>
+          <p><span>⬇</span> 后退</p>
+          <p><span>⬅</span> 左转</p>
+          <p><span>➡</span> 右转</p>
+          <el-divider border-style="dashed" style="margin: 15px 0; border-color: #444;" />
           <p><span class="key-btn">M</span> 紧急停止</p>
           <p><span class="key-btn">1</span> 摄像头左转</p>
           <p><span class="key-btn">3</span> 摄像头右转</p>
@@ -702,7 +703,7 @@ onUnmounted(() => {
 
 .virtual-title {
   margin-top: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 30px;
 }
 
 .control-pad {

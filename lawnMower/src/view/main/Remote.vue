@@ -33,7 +33,7 @@
             <el-button type="primary" circle size="large" @click="sendCommand('s')">⬇</el-button>
           </div>
         </div>
-        <el-divider border-style="dashed" style="margin: 80px 0; border-color: #444;" />
+        <el-divider border-style="dashed" style="margin: 40px 0; border-color: #444;" />
         <h4 class="virtual-title">摄像头虚拟摇杆</h4>
         <div class="control-pad">
           <div class="pad-row">
@@ -578,7 +578,7 @@ onUnmounted(() => {
 
 <style scoped>
 .remote-page {
-  min-height: 100vh;
+  height: 82vh;
   background: #101418;
   color: #fff;
   padding: 16px;
@@ -586,6 +586,7 @@ onUnmounted(() => {
 }
 
 .top-bar {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -622,6 +623,9 @@ onUnmounted(() => {
 }
 
 .main-layout {
+  /* 新增 flex 和 min-height 属性，其他保持不变 */
+  flex: 1; 
+  min-height: 0; /* 关键：防止子元素把容器撑开导致滚动 */
   display: grid;
   grid-template-columns: 280px 1fr 300px;
   gap: 16px;
@@ -637,7 +641,7 @@ onUnmounted(() => {
 
 .video-box {
   position: relative;
-  min-height: 600px;
+  height: 100%;
   background: #000;
   border-radius: 18px;
   overflow: hidden;
@@ -675,9 +679,9 @@ onUnmounted(() => {
 }
 
 .placeholder {
+/* 替换这里 */
   width: 100%;
-  height: 100%;
-  min-height: 600px;
+  height: 100%; 
   display: flex;
   justify-content: center;
   align-items: center;

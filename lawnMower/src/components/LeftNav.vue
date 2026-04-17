@@ -25,31 +25,33 @@
       </el-menu-item>
 
       <el-menu-item index="2">
-        <el-icon><icon-menu /></el-icon>
+        <el-icon><img src="../assets/weed.png" class="custom-icon" /></el-icon>
         <template #title>检测杂草</template>
       </el-menu-item>
 
       <el-menu-item index="3">
-        <el-icon><Platform /></el-icon>
+        <el-icon><img src="../assets/control.png" class="custom-icon" /></el-icon>
         <template #title>远程驾驶</template>
       </el-menu-item>
 
-      <el-menu-item index="4">
+      <!-- <el-menu-item index="4">
         <el-icon><Location /></el-icon>
         <template #title>自动除草</template>
-      </el-menu-item>
+      </el-menu-item> -->
+
       <el-menu-item index="5">
-        <el-icon><Location /></el-icon>
+        <el-icon><img src="../assets/machine.png" class="custom-icon" /></el-icon>
         <template #title>除草机列表</template>
       </el-menu-item>
+      
       <el-menu-item index="6">
-        <el-icon><Location /></el-icon>
+        <el-icon><img src="../assets/tasklist.png" class="custom-icon" /></el-icon>
         <template #title>任务列表</template>
       </el-menu-item>
-      <el-menu-item index="7">
+      <!-- <el-menu-item index="7">
         <el-icon><QuestionFilled /></el-icon>
         <template #title>AI问答</template>
-      </el-menu-item>
+      </el-menu-item> -->
     </el-menu>
   </div>
 </template>
@@ -143,5 +145,10 @@ const activeIndex = computed(() => {
 
 :deep(.el-menu-item:hover), :deep(.el-sub-menu__title:hover) {
   background-color: #302e2e;
+}
+.custom-icon {
+  width: 18px;  /* 根据你需要的大小进行微调，通常 18-20px 比较合适 */
+  height: 18px;
+  object-fit: contain; /* 确保图片完整显示不被拉伸变形 */
 }
 </style>

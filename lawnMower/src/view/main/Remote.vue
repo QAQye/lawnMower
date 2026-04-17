@@ -232,13 +232,13 @@ const connectControlWs = () => {
   controlSocket = new WebSocket(WS_CONTROL_URL)
 
   controlSocket.onopen = () => {
-    console.log('✅ 前端控制 WebSocket 连接成功')
+    console.log('前端控制 WebSocket 连接成功')
     wsStatusText.value = '已连接'
     controlStatusText.value = 'WebSocket 已连接，可发送控制命令'
   }
 
   controlSocket.onmessage = (event) => {
-    console.log('📩 收到后端 WebSocket 返回消息:', event.data)
+    console.log('收到后端 WebSocket 返回消息:', event.data)
 
     try {
       const data = JSON.parse(event.data)
@@ -380,7 +380,7 @@ const loadStreamInfo = async () => {
       whepUrl: res.data?.whepUrl || '',
     }
 
-    console.log('✅ 已获取纯净摄像头流地址：', streamInfo.value)
+    console.log('已获取纯净摄像头流地址：', streamInfo.value)
     return streamInfo.value
   } catch (error) {
     console.error('获取流地址失败：', error)
@@ -388,6 +388,7 @@ const loadStreamInfo = async () => {
     throw error
   }
 }
+
 
 // ================= 强制播放处理 =================
 const forcePlayVideo = async () => {
@@ -430,7 +431,7 @@ const initWebRTC = async () => {
     peerConnection.addTransceiver('video', { direction: 'recvonly' })
 
     peerConnection.ontrack = async (event) => {
-      console.log('📡 触发 ontrack 事件，接收到媒体轨道：', event.track.kind)
+      console.log('触发 ontrack 事件，接收到媒体轨道：', event.track.kind)
       if (event.track.kind !== 'video') return
 
       const remoteStream = event.streams?.[0]
@@ -445,11 +446,11 @@ const initWebRTC = async () => {
       try {
         currentPlayPromise = video.play()
         await currentPlayPromise
-        console.log('✅ 视频自动播放成功')
+        console.log('视频自动播放成功')
         videoStatusText.value = '视频播放中'
         showPlayBtn.value = false
       } catch (e) {
-        console.warn('⚠️ 自动播放失败:', e)
+        console.warn('自动播放失败:', e)
 
         if (e?.name === 'AbortError') {
           console.warn('play() 被中断，忽略这次报错')

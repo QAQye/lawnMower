@@ -137,13 +137,13 @@ const connectStatusWs = () => {
   statusSocket = new WebSocket(wsUrl);
 
   statusSocket.onopen = () => {
-    console.log('✅ 设备状态 WebSocket 已连接');
+    console.log('设备状态 WebSocket 已连接');
   };
 
   statusSocket.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
-      console.log('📩 收到设备状态推送:', msg);
+      console.log('收到设备状态推送:', msg);
 
       if (msg.type === 'connected') {
         return;
